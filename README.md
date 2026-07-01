@@ -63,6 +63,17 @@ python3 -m unittest chain/rpc/api/test_acp_adapter.py
 python3 -m unittest chain/contracts/core/test_dex.py
 ```
 
+### How to Build and Run via Docker
+This repository conforms to the **Single Artifact Principle** and builds into a single container:
+
+```bash
+# 1. Build the docker image
+docker build -t coin-protocol-core .
+
+# 2. Run the node and expose the ACP adapter port
+docker run -p 8545:8545 coin-protocol-core
+```
+
 ---
 
 ## 🌲 Protocol Business Decision Tree
