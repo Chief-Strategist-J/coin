@@ -34,7 +34,7 @@ class P2PNodeInterface:
         self.node_type = node_type
         self.listen_address = listen_address
         self.peers: Dict[str, Peer] = {}
-        self.topics: Dict[str, Set[str]] = {}  # topic_name -> set of peer_ids
+        self.topics: Dict[str, Set[str]] = {}  
         self.is_running: bool = False
 
     def start(self) -> None:
@@ -54,7 +54,6 @@ class P2PNodeInterface:
         if peer_id in self.peers:
             self.peers[peer_id].connected = False
             del self.peers[peer_id]
-            # Clean up subscriptions
             for topic in self.topics:
                 self.topics[topic].discard(peer_id)
             return True
@@ -83,7 +82,6 @@ class P2PNodeInterface:
         if topic in self.topics:
             for peer_id in self.topics[topic]:
                 peer = self.peers.get(peer_id)
-                if peer and peer.connected and peer.reputation > 20:  # Filter out bad reputation peers
-                    # In a real network, this sends the data over the transport layer socket
+                if peer and peer.connected and peer.reputation > 20:  
                     sent_to.append(peer_id)
         return sent_to

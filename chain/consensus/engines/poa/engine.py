@@ -22,21 +22,17 @@ class ProofOfAuthorityEngine(ConsensusEngineInterface):
         timestamp = time.time()
         block_hash = self._calculate_hash(parent_hash, validator, transactions, timestamp)
         block = Block(block_hash, parent_hash, validator, transactions, timestamp)
-        # Author proposer's initial signature
         block.signatures.append(f"sig-{validator}")
         return block
 
     def validate_block(self, block: Block) -> bool:
-        # 1. Proposer must be authorized
         if block.validator not in self.validators:
             return False
         
-        # 2. Recompute hash for integrity verification
         expected_hash = self._calculate_hash(block.parent_hash, block.validator, block.transactions, block.timestamp)
         if block.block_hash != expected_hash:
             return False
         
-        # 3. Must contain at least one valid signature from an authorized validator
         for signature in block.signatures:
             signer = signature.replace("sig-", "")
             if signer not in self.validators:
@@ -47,7 +43,6 @@ class ProofOfAuthorityEngine(ConsensusEngineInterface):
         if not self.validate_block(block):
             raise ValueError("Block validation failed; cannot finalize block")
         
-        # In BFT-PoA, block is final when > 2/3 (or simple majority) of validators sign it
         required_signatures = (len(self.validators) * 2) // 3 + 1
         if len(block.signatures) < required_signatures:
             raise ValueError(f"Insufficient signatures: got {len(block.signatures)}, need {required_signatures}")

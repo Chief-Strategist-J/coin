@@ -25,10 +25,8 @@ class TestPoSEngine(unittest.TestCase):
             self.engine.propose_block("low-val", txs, "parent")
 
     def test_equivocation_slashing(self):
-        # Sign block hash A at height 10
         self.engine.register_signature(10, "val-1", "hash-A")
         
-        # Double signing block hash B at same height 10 -> Slashing!
         with self.assertRaises(ValueError) as context:
             self.engine.register_signature(10, "val-1", "hash-B")
         self.assertIn("Equivocation detected", str(context.exception))
@@ -39,14 +37,10 @@ class TestPoSEngine(unittest.TestCase):
         txs = []
         block = self.engine.propose_block("val-1", txs, "parent")
         
-        # Total active stake = 2000 + 1500 + 1500 + 1000 = 6000
-        # Required stake weight > 2/3 (4000). 
-        # Proposed block only has "val-1" signature (weight 2000)
         with self.assertRaises(ValueError) as context:
             self.engine.finalize_block(block)
         self.assertIn("Insufficient stake weight", str(context.exception))
 
-        # Add val-2 (1500) and val-3 (1500) to cross the threshold (5000 / 6000)
         block.signatures.append("sig-val-2")
         block.signatures.append("sig-val-3")
 

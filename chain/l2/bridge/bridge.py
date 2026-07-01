@@ -6,12 +6,12 @@ class L1BridgeContract:
     L1 Bridge Contract executing on the L1 state machine.
     Manages L1->L2 deposits, L2->L1 withdrawal settlements, and L2 batch commitment verifications.
     """
-    def __init__(self, challenge_window: int = 10):  # Reduced epoch limit for test simulation
-        self.deposits: Dict[str, int] = {}  # user -> pending L2 allocation balance
-        self.withdrawals: Dict[str, Dict[str, Any]] = {}  # withdrawal_id -> details
-        self.state_batches: List[Dict[str, Any]] = []  # index -> {state_root, tx_hash_list}
+    def __init__(self, challenge_window: int = 10):  
+        self.deposits: Dict[str, int] = {}  
+        self.withdrawals: Dict[str, Dict[str, Any]] = {}  
+        self.state_batches: List[Dict[str, Any]] = []  
         self.challenge_window = challenge_window
-        self.challenges: Dict[int, bool] = {}  # batch_index -> is_challenged
+        self.challenges: Dict[int, bool] = {}  
 
     def deposit(self, user: str, amount: int) -> Dict[str, Any]:
         """
@@ -35,7 +35,7 @@ class L1BridgeContract:
             "state_root": state_root,
             "tx_hashes": tx_hashes,
             "submitter": submitter,
-            "timestamp": len(self.state_batches)  # Simulating blocks as epochs
+            "timestamp": len(self.state_batches)  
         })
 
     def challenge_batch(self, batch_index: int, proof_data: str) -> bool:
@@ -45,17 +45,13 @@ class L1BridgeContract:
         if batch_index >= len(self.state_batches):
             raise ValueError("Batch does not exist")
         
-        # Verify if within challenge window
         current_time = len(self.state_batches)
         batch = self.state_batches[batch_index]
         if current_time - batch["timestamp"] > self.challenge_window:
             raise ValueError("Challenge window closed")
 
-        # In a real fraud proof, verify the state transition steps.
-        # Here we verify if fraud proof string indicates invalid state sequence.
         if "invalid" in proof_data:
             self.challenges[batch_index] = True
-            # Revert state batch
             self.state_batches = self.state_batches[:batch_index]
             return True
         return False
@@ -67,7 +63,6 @@ class L1BridgeContract:
         if batch_index >= len(self.state_batches):
             raise ValueError("State root not yet finalized")
         
-        # Verify batch index is unchallenged and finalized
         if self.challenges.get(batch_index, False):
             raise ValueError("Batch was invalidated by fraud proof")
 

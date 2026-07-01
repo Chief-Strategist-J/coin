@@ -51,23 +51,19 @@ class StateMachine:
         sender = self.get_or_create_account(tx["from"])
         recipient = self.get_or_create_account(tx["to"])
 
-        # 1. Nonce and balance checks
         if tx["nonce"] != sender.nonce:
             return False, "Invalid Transaction Nonce"
         
-        gas_cost = tx.get("gas_limit", 1000) * 1  # 1 unit gas price
+        gas_cost = tx.get("gas_limit", 1000) * 1  
         total_debit = tx["value"] + gas_cost
         
         if sender.balance < total_debit:
             return False, "Insufficient Balance"
 
-        # Debit sender
         sender.balance -= total_debit
         sender.nonce += 1
 
-        # Execution logic (Contract execution or Balance Transfer)
         if tx.get("bytecode"):
-            # Deploying or calling code
             recipient.contract_code = tx["bytecode"]
             storage = self.contract_storage.get(recipient.address, {})
             
@@ -76,19 +72,15 @@ class StateMachine:
             )
             
             if err:
-                # Revert logic: Refund value (gas is consumed)
                 sender.balance += tx["value"]
                 return False, f"Contract execution failed: {err}"
             
             self.contract_storage[recipient.address] = new_storage
             recipient.balance += tx["value"]
-            # Refund unused gas
             refund = (tx["gas_limit"] - gas_used) * 1
             sender.balance += refund
         else:
-            # simple transfer
             recipient.balance += tx["value"]
-            # refund gas limit minus base tx cost
             sender.balance += (tx["gas_limit"] - 100) * 1
 
         return True, "Success"

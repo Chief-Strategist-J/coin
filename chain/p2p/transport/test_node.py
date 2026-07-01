@@ -26,7 +26,6 @@ class TestP2PNode(unittest.TestCase):
         self.assertIn("peer-2", self.node.peers)
         self.assertTrue(self.node.peers["peer-2"].connected)
 
-        # Cannot add self
         self_peer = Peer(self.node_id, NodeType.VALIDATOR, "127.0.0.1:4001")
         added_self = self.node.add_peer(self_peer)
         self.assertFalse(added_self)
@@ -39,11 +38,9 @@ class TestP2PNode(unittest.TestCase):
         peer = Peer("peer-2", NodeType.FULL, "127.0.0.1:4002")
         self.node.add_peer(peer)
 
-        # Subscribe peer to a topic
         self.node.subscribe("blocks", "peer-2")
         self.assertIn("peer-2", self.node.topics["blocks"])
 
-        # Unsubscribe peer
         self.node.unsubscribe("blocks", "peer-2")
         self.assertNotIn("peer-2", self.node.topics["blocks"])
 

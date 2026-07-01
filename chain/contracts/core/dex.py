@@ -22,9 +22,8 @@ class DexMarketMaker:
             return 0, "Invalid liquidity amounts"
 
         if self.total_shares == 0:
-            shares = amount_a  # Simple base share allocation
+            shares = amount_a  
         else:
-            # Enforce constant product ratios
             shares = min((amount_a * self.total_shares) // self.reserve_a,
                          (amount_b * self.total_shares) // self.reserve_b)
 
@@ -47,9 +46,6 @@ class DexMarketMaker:
         if self.reserve_a == 0 or self.reserve_b == 0:
             return 0, "Zero pool liquidity reserves"
 
-        # Formula: (reserve_a * reserve_b) = (reserve_a + amount_in) * (reserve_b - amount_out)
-        # amount_out = (reserve_b * amount_in) / (reserve_a + amount_in)
-        # Applying a 0.3% fee: amount_in_with_fee = amount_in * 997
         amount_in_with_fee = amount_in * 997
         numerator = amount_in_with_fee * self.reserve_b
         denominator = (self.reserve_a * 1000) + amount_in_with_fee

@@ -43,7 +43,6 @@ class TestACPAdapter(unittest.TestCase):
         self.assertEqual(self.state_machine.accounts["bob"].balance, 1000)
 
     def test_process_invalid_parameters_failure(self):
-        # Missing sender / conversation_id
         envelope = {
             "id": "msg-123",
             "performative": "REQUEST",

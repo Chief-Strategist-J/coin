@@ -1,0 +1,28 @@
+flow_dsl_spec: protocol_reference
+version: 1
+engine_config:
+  evaluation_order: priority_ascending
+  match_strategy: first_match_wins
+  strict_schema_validation: true
+  fail_on_unknown_fields: true
+hexagonal_architecture:
+  core_domain:
+    entities:
+      - name: Account
+      - name: Peer
+      - name: Block
+      - name: DexMarketMaker
+    domain_services:
+      - name: StateMachine
+      - name: ProofOfAuthorityEngine
+      - name: ProofOfStakeEngine
+  ports:
+    inbound:
+      - name: ACPAdapter
+      - name: L1BridgeContract
+  adapters:
+    inbound:
+      - implements_port: ACPAdapter
+        type: message_consumer
+      - implements_port: L1BridgeContract
+        type: http_controller

@@ -26,7 +26,6 @@ class ACPAdapter:
         sender = msg.get("sender")
         msg_id = msg.get("id")
 
-        # 1. Validation
         if not conv_id or not sender:
             return self._build_failure_envelope(conv_id, msg_id, -32602, "Invalid Params: missing conversation_id or sender")
 
@@ -34,15 +33,12 @@ class ACPAdapter:
         if performative != "REQUEST":
             return self._build_failure_envelope(conv_id, msg_id, -32600, f"Unsupported Performative: {performative}")
 
-        # 2. Extract transaction payload
         content = msg.get("content", {})
         tx = content.get("parameters")
         if not tx:
             return self._build_failure_envelope(conv_id, msg_id, -32602, "Missing transaction parameters")
 
-        # Map to State Machine Core Service Layer (Hexagonal Driving Pattern)
         try:
-            # Enforce binary formatting for inputs in State Machine
             tx_payload = {
                 "from": tx["from"],
                 "to": tx["to"],
@@ -56,7 +52,6 @@ class ACPAdapter:
             if not success:
                 return self._build_failure_envelope(conv_id, msg_id, -32603, f"Execution Reverted: {detail}")
             
-            # 3. Respond with SUCCESS (INFORM Performative)
             state_root = self.state_machine.compute_state_root()
             return json.dumps({
                 "id": str(uuid.uuid4()),
