@@ -1,119 +1,64 @@
 # Decentralized AI Agent Network & DEX Core
 
-A secure, trustless, and modular blockchain protocol designed for coordinating autonomous AI Agent Networks and executing Decentralized Exchange (DEX) mechanics under Byzantine assumptions.
-
-## Core Architectural Layout
-
-This project follows a decoupled, modular design ensuring that consensus, execution engines, and communication protocols are isolated boundaries:
-
-```
-├── chain/
-│   ├── p2p/                  # P2P Node transport, discovery, and gossip protocol
-│   ├── consensus/            # Pluggable Consensus Engines (PoA, PoS, DPoS)
-│   ├── execution/            # State machine (Mempool, Merkle Trie, Block validation)
-│   ├── vm/                   # Multi-VM isolation (EVM, WASM runtime)
-│   ├── l2/                   # Rollups, Batch Sequencers, and L1 Bridges
-│   └── rpc/                  # JSON-RPC Gateway & API endpoints
-├── infra/                    # Operational configs (Node deployments, Key KMS, Monitoring)
-└── policies/                 # Architectural rules, coupling constraints, and designs
-```
+This is a trustless blockchain platform designed to let **AI Agents** interact, trade tokens, and coordinate with each other securely and without relying on a central authority.
 
 ---
 
-## What We Have Implemented
+## 🚀 How It Works (For End Users)
 
-### 1. P2P Transport Layer (`chain/p2p/transport`)
-* **`Peer` representation**: Tracks node type, address, connection states, and reputation metrics (0–100 scale).
-* **`P2PNodeInterface`**:
-  * Implements dynamic peer registration and topic subscription systems.
-  * **Gossip propagation**: Restricts block/transaction gossiping to healthy, trusted nodes (reputation `>= 20`).
+### 1. Peer-to-Peer (P2P) Network
+Nodes in this network gossip messages and coordinate transactions. To prevent spam and malicious actions, nodes track a **Reputation Score** for each peer. If a node begins misbehaving, its reputation drops, and other nodes automatically stop accepting messages from it.
 
-### 2. Pluggable Consensus Layer (`chain/consensus`)
-* **`ConsensusEngineInterface`**: Standardizes block creation, validation, and finality mechanisms.
-* **`ProofOfAuthorityEngine`**: Implements BFT-PoA consensus requiring validator threshold signatures (`> 2/3` validation set) and enforcing a minimum set of `4` validators.
-* **`ProofOfStakeEngine`**: Implements economic Sybil resistance, equivocation slashing (double-sign protection), weak subjectivity checkpoints, and stake-weighted block finality.
+### 2. Trustless Consensus (PoA & PoS)
+The network stays secure and consistent using two built-in consensus engines:
+* **Proof-of-Authority (PoA)**: Used for testnets. Authorized validators propose blocks, requiring a $2/3$ signature agreement threshold.
+* **Proof-of-Stake (PoS)**: Used for mainnets. Validators lock up coins (stake) to validate blocks. If a validator attempts to cheat by signing two conflicting blocks at the same time, the protocol detects this immediately and **slashes their stake to zero**.
 
-### 3. L1 Execution Layer & VM (`chain/execution`, `chain/vm`)
-* **`VMInterface`**: Standardizes sandbox bytecode execution boundary.
-* **`DummyEVM`**: Simulates sandboxed gas-metered execution (SSTORE/SLOAD) and 256-bit safe integer arithmetic.
-* **`StateMachine`**:
-  * Orchestrates account balances, transaction nonces, gas limits, and transaction execution.
-  * Computes deterministic state roots by sorting account storage maps.
-  * Reverts contract states and handles gas refunds.
+### 3. Smart Contracts & VM
+You can deploy and run programs (Smart Contracts) on the network. The system includes:
+* A simulated **EVM execution sandbox** to process transactions.
+* **Gas limits and fees** to prevent infinite loops from freezing the network.
+* **State Rollbacks**: If a transaction runs out of gas, it reverts to keep your funds safe.
 
-### 4. L2 Rollup & L1 Bridge (`chain/l2`)
-* **`L1BridgeContract`**:
-  * Accepts deposits locking assets on L1 to be claimed on L2.
-  * Publishes L2 state roots via `submit_state_batch` to start the challenge window.
-  * Evaluates fraud proofs (`challenge_batch`) to invalidate state root sequences in case of malicious execution.
-  * Settles unchallenged L2->L1 withdrawals once the challenge window expires.
+### 4. Layer 2 Rollups & L1 Bridge
+To make transactions faster and cheaper, the network supports Layer 2 (L2) Rollups:
+* You lock your assets on Layer 1 (L1) via the **Bridge** to use them on L2.
+* Validators bundle transactions together and submit them to L1.
+* There is a **Challenge Window**. If anyone detects that a validator submitted an invalid transaction, they submit a **Fraud Proof**, which automatically cancels the invalid update.
+* Once the challenge window closes unchallenged, you can securely withdraw your funds back to L1.
 
-### 5. Developer APIs & Agent Protocols (`chain/rpc/api`)
-* **`ACPAdapter`**:
-  * Implements the Agent Communication Protocol (ACP) for coordinating Agentic Workflows.
-  * Parses, validates, and responds to incoming FIPA-style ACP JSON envelopes.
-  * Maps agent `REQUEST` performance envelopes directly to State Machine transaction executions.
-  * Formats success outputs to structured `INFORM` response schemas containing height details and cryptographic state root validation parameters.
+### 5. AI Agent Communication (ACP)
+AI Agents talk to the blockchain using the **Agent Communication Protocol (ACP)**. They send structured messages (envelopes) requesting actions (like trading tokens), and the network processes them and returns cryptographic proofs showing that the action completed successfully.
 
-### 6. Decentralized Exchange Smart Contracts (`chain/contracts/core`)
-* **`DexMarketMaker`**:
-  * Core automated market maker (AMM) implementing Constant Product formula mechanics (`x * y = k`).
-  * Manages liquidity provider pools, shares, and reserves.
-  * Implements transaction fee deductions (0.3% base cost) on token swaps.
+### 6. Trading (DEX AMM)
+There is a built-in Decentralized Exchange (DEX). It uses a **Constant Product formula ($x \times y = k$)** to swap tokens:
+* Anyone can add tokens to a liquidity pool to earn fees.
+* When you trade Token A for Token B, the pool calculates the price automatically and charges a tiny 0.3% fee to reward the liquidity providers.
 
 ---
 
-## How to Run & Write Tests
+## 🛠️ Developer Integration & Testing
 
-We follow a strict "No network, database, or filesystem access in unit tests" rule to keep tests extremely fast and deterministic.
-
-### Running Existing Unit & Integration Tests
-To run tests across our consensus, execution, rollup, API, and contract layers, execute:
+### How to Run Tests
+Run the entire protocol test suite with these commands:
 
 ```bash
-# Run P2P transport layer tests
+# Run P2P network tests
 python3 -m unittest chain/p2p/transport/test_node.py
 
-# Run PoA & PoS consensus engine tests
+# Run Consensus engine tests
 python3 -m unittest chain/consensus/engines/poa/test_engine.py
 python3 -m unittest chain/consensus/engines/pos/test_engine.py
 
-# Run L1 state machine & VM integration tests
+# Run State Machine and VM execution tests
 python3 -m unittest chain/execution/state/test_machine.py
 
-# Run L2 Bridge & Rollup tests
+# Run Bridge and Rollup tests
 python3 -m unittest chain/l2/bridge/test_bridge.py
 
-# Run ACP Agent protocol tests
+# Run AI Agent communication tests
 python3 -m unittest chain/rpc/api/test_acp_adapter.py
 
-# Run DEX smart contract tests
+# Run DEX trading contract tests
 python3 -m unittest chain/contracts/core/test_dex.py
-```
-
-### Adding New Tests
-When adding new features (e.g., DPoS delegation, WASM execution, etc.):
-1. Create a corresponding `test_*.py` file next to your implementation.
-2. Extend `unittest.TestCase`.
-3. Ensure all external dependencies are cleanly mocked out via dependency injection or interfaces.
-
----
-
-## How to Extend the Protocol
-
-### 1. Swapping Consensus Engines
-To introduce Delegated Proof-of-Stake (DPoS):
-1. Subclass the `ConsensusEngineInterface` located in `chain/consensus/interface/engine.py`.
-2. Implement custom validator elections, delegation, and vote-decay rules under `chain/consensus/engines/dpos/`.
-
-### 2. Creating New Node Types
-To run a specialized node (e.g. an **RPC Node** or **Archive Node**), instantiate the `P2PNodeInterface` with the corresponding `NodeType` configuration:
-```python
-from chain.p2p.transport.node import P2PNodeInterface, NodeType
-
-rpc_node = P2PNodeInterface(
-    node_id="rpc-node-01",
-    node_type=NodeType.RPC,
-    listen_address="0.0.0.0:8545"
-)
 ```
