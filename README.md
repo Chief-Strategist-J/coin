@@ -55,6 +55,12 @@ This project follows a decoupled, modular design ensuring that consensus, execut
   * Maps agent `REQUEST` performance envelopes directly to State Machine transaction executions.
   * Formats success outputs to structured `INFORM` response schemas containing height details and cryptographic state root validation parameters.
 
+### 6. Decentralized Exchange Smart Contracts (`chain/contracts/core`)
+* **`DexMarketMaker`**:
+  * Core automated market maker (AMM) implementing Constant Product formula mechanics (`x * y = k`).
+  * Manages liquidity provider pools, shares, and reserves.
+  * Implements transaction fee deductions (0.3% base cost) on token swaps.
+
 ---
 
 ## How to Run & Write Tests
@@ -62,7 +68,7 @@ This project follows a decoupled, modular design ensuring that consensus, execut
 We follow a strict "No network, database, or filesystem access in unit tests" rule to keep tests extremely fast and deterministic.
 
 ### Running Existing Unit & Integration Tests
-To run tests across our consensus, execution, rollup, and agentic API layers, execute:
+To run tests across our consensus, execution, rollup, API, and contract layers, execute:
 
 ```bash
 # Run P2P transport layer tests
@@ -80,6 +86,9 @@ python3 -m unittest chain/l2/bridge/test_bridge.py
 
 # Run ACP Agent protocol tests
 python3 -m unittest chain/rpc/api/test_acp_adapter.py
+
+# Run DEX smart contract tests
+python3 -m unittest chain/contracts/core/test_dex.py
 ```
 
 ### Adding New Tests
