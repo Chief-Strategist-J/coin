@@ -62,3 +62,41 @@ python3 -m unittest chain/rpc/api/test_acp_adapter.py
 # Run DEX trading contract tests
 python3 -m unittest chain/contracts/core/test_dex.py
 ```
+
+---
+
+## 🌲 Protocol Business Decision Tree
+
+This protocol is structured to map high-level product and business requirements directly to cryptographic and architectural constraints:
+
+```
+[Business Goal: Build a Trustless AI Agent DEX Network]
+ ├── [Trust Model: Traditional System -> Decentralized Blockchain]
+ │    ├── Pros: Eliminates single operator dependency; auditability guarantees safety.
+ │    └── Cons: Higher execution latency; state modifications are irreversible.
+ │
+ ├── [Consensus selection: Low-latency Testnet vs Secure Mainnet]
+ │    ├── Proof-of-Authority (PoA)
+ │    │    ├── Pros: Fast block finalization; simple authority sets.
+ │    │    └── Cons: Not Byzantine Fault Tolerant under 4 nodes.
+ │    └── Proof-of-Stake (PoS)
+ │         ├── Pros: Economic Sybil-resistance; self-correcting via slashing.
+ │         └── Cons: Risk of long-range history rewrites (mitigated by checkpoints).
+ │
+ ├── [Scalability strategy: Layer 1 execution vs Layer 2 Rollups]
+ │    ├── Layer 1 Base Chain
+ │    │    ├── Pros: Direct cryptographic settlement; immediate state finality.
+ │    │    └── Cons: Throughput limits; higher execution gas fees.
+ │    └── Layer 2 Optimistic Rollup
+ │         ├── Pros: High transaction throughput; extremely cheap fees.
+ │         └── Cons: 7-day challenge window wait time for withdrawals.
+ │
+ └── [Interface standard: REST API vs Agent Communication Protocol (ACP)]
+      ├── REST HTTP
+      │    ├── Pros: Standard web compatibility; simple client implementation.
+      │    └── Cons: Missing conversational metadata; no direct agent trace context.
+      └── ACP Envelope Boundary
+           ├── Pros: Natural integration with multi-agent networks; W3C tracing.
+           └── Cons: Payload strictness; stateless mapping translation layers.
+```
+

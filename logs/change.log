@@ -8,3 +8,13 @@
         ├── Rollup -> Created L1Bridge contract managing deposits, challenge windows, and withdrawals.
         ├── API -> Standardized ACP agent communication parser and FIPA inform payloads.
         └── DEX -> Implemented constant product AMM pool swaps.
+
+[2026-07-01T19:32:00Z] Core Protocol Business Decision Tree
+└── File: README.md
+    ├── Choice: Map business values, trade-offs, and trust assumptions to technical architectures.
+    └── Changes:
+        ├── Trust Model -> Shifted security guarantee from traditional ops to cryptographically validated protocols.
+        ├── Consensus Swap -> Allowed permissioned PoA (low-latency) to pivot dynamically to PoS (Sybil-resistant economic security).
+        ├── Execution Bounds -> Enforced deterministic state root sorting and gas limit penalties to block network exhaustion.
+        ├── Rollups -> Scaled throughput by processing off-chain execution with optimistic fraud-proof challenge bounds.
+        └── Agent Economy -> Standardized ACP boundaries to support trustless Agentic DEX swap interactions.
