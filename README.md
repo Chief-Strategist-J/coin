@@ -25,17 +25,28 @@ This project follows a decoupled, modular design ensuring that consensus, execut
 ### 1. P2P Transport Layer (`chain/p2p/transport`)
 * **`Peer` representation**: Tracks node type, address, connection states, and reputation metrics (0–100 scale).
 * **`P2PNodeInterface`**:
-  * Implements dynamic peer registration.
-  * Pub/Sub topic subscription system.
-  * **Gossip propagation**: Restricts block/transaction gossiping to healthy, trusted nodes by checking peer reputation status (nodes with `< 20` reputation are filtered out).
+  * Implements dynamic peer registration and topic subscription systems.
+  * **Gossip propagation**: Restricts block/transaction gossiping to healthy, trusted nodes (reputation `>= 20`).
 
 ### 2. Pluggable Consensus Layer (`chain/consensus`)
-* **`ConsensusEngineInterface`**: Standardizes block creation, validation, and finality mechanisms, allowing pluggable consensus swapping (PoA, PoS, DPoS) without modifying the execution layer.
-* **`ProofOfAuthorityEngine`**:
-  * Implements a BFT-PoA consensus algorithm.
-  * Recomputation validation for block hash integrity.
-  * **Threshold finality**: Requires greater than `2/3` of the active validator set to sign the block before declaring it finalized.
-  * **BFT Safety**: Enforces a strict minimum limit of `4` validators to tolerate up to `1` Byzantine failure.
+* **`ConsensusEngineInterface`**: Standardizes block creation, validation, and finality mechanisms.
+* **`ProofOfAuthorityEngine`**: Implements BFT-PoA consensus requiring validator threshold signatures (`> 2/3` validation set) and enforcing a minimum set of `4` validators.
+* **`ProofOfStakeEngine`**: Implements economic Sybil resistance, equivocation slashing (double-sign protection), weak subjectivity checkpoints, and stake-weighted block finality.
+
+### 3. L1 Execution Layer & VM (`chain/execution`, `chain/vm`)
+* **`VMInterface`**: Standardizes sandbox bytecode execution boundary.
+* **`DummyEVM`**: Simulates sandboxed gas-metered execution (SSTORE/SLOAD) and 256-bit safe integer arithmetic.
+* **`StateMachine`**:
+  * Orchestrates account balances, transaction nonces, gas limits, and transaction execution.
+  * Computes deterministic state roots by sorting account storage maps.
+  * Reverts contract states and handles gas refunds.
+
+### 4. L2 Rollup & L1 Bridge (`chain/l2`)
+* **`L1BridgeContract`**:
+  * Accepts deposits locking assets on L1 to be claimed on L2.
+  * Publishes L2 state roots via `submit_state_batch` to start the challenge window.
+  * Evaluates fraud proofs (`challenge_batch`) to invalidate state root sequences in case of malicious execution.
+  * Settles unchallenged L2->L1 withdrawals once the challenge window expires.
 
 ---
 
@@ -43,19 +54,26 @@ This project follows a decoupled, modular design ensuring that consensus, execut
 
 We follow a strict "No network, database, or filesystem access in unit tests" rule to keep tests extremely fast and deterministic.
 
-### Running Existing Unit Tests
-To run unit tests for the P2P transport layer and the Proof-of-Authority consensus layer, execute:
+### Running Existing Unit & Integration Tests
+To run tests across our consensus, execution, and rollup layers, execute:
 
 ```bash
 # Run P2P transport layer tests
 python3 -m unittest chain/p2p/transport/test_node.py
 
-# Run PoA consensus engine tests
+# Run PoA & PoS consensus engine tests
 python3 -m unittest chain/consensus/engines/poa/test_engine.py
+python3 -m unittest chain/consensus/engines/pos/test_engine.py
+
+# Run L1 state machine & VM integration tests
+python3 -m unittest chain/execution/state/test_machine.py
+
+# Run L2 Bridge & Rollup tests
+python3 -m unittest chain/l2/bridge/test_bridge.py
 ```
 
 ### Adding New Tests
-When adding new features (e.g., PoS staking, WASM execution, etc.):
+When adding new features (e.g., DPoS delegation, WASM execution, etc.):
 1. Create a corresponding `test_*.py` file next to your implementation.
 2. Extend `unittest.TestCase`.
 3. Ensure all external dependencies are cleanly mocked out via dependency injection or interfaces.
@@ -65,9 +83,9 @@ When adding new features (e.g., PoS staking, WASM execution, etc.):
 ## How to Extend the Protocol
 
 ### 1. Swapping Consensus Engines
-To introduce Proof-of-Stake (PoS):
+To introduce Delegated Proof-of-Stake (DPoS):
 1. Subclass the `ConsensusEngineInterface` located in `chain/consensus/interface/engine.py`.
-2. Implement custom staking, slashing, and finality checkpoints under `chain/consensus/engines/pos/`.
+2. Implement custom validator elections, delegation, and vote-decay rules under `chain/consensus/engines/dpos/`.
 
 ### 2. Creating New Node Types
 To run a specialized node (e.g. an **RPC Node** or **Archive Node**), instantiate the `P2PNodeInterface` with the corresponding `NodeType` configuration:
