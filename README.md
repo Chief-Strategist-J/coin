@@ -48,6 +48,13 @@ This project follows a decoupled, modular design ensuring that consensus, execut
   * Evaluates fraud proofs (`challenge_batch`) to invalidate state root sequences in case of malicious execution.
   * Settles unchallenged L2->L1 withdrawals once the challenge window expires.
 
+### 5. Developer APIs & Agent Protocols (`chain/rpc/api`)
+* **`ACPAdapter`**:
+  * Implements the Agent Communication Protocol (ACP) for coordinating Agentic Workflows.
+  * Parses, validates, and responds to incoming FIPA-style ACP JSON envelopes.
+  * Maps agent `REQUEST` performance envelopes directly to State Machine transaction executions.
+  * Formats success outputs to structured `INFORM` response schemas containing height details and cryptographic state root validation parameters.
+
 ---
 
 ## How to Run & Write Tests
@@ -55,7 +62,7 @@ This project follows a decoupled, modular design ensuring that consensus, execut
 We follow a strict "No network, database, or filesystem access in unit tests" rule to keep tests extremely fast and deterministic.
 
 ### Running Existing Unit & Integration Tests
-To run tests across our consensus, execution, and rollup layers, execute:
+To run tests across our consensus, execution, rollup, and agentic API layers, execute:
 
 ```bash
 # Run P2P transport layer tests
@@ -70,6 +77,9 @@ python3 -m unittest chain/execution/state/test_machine.py
 
 # Run L2 Bridge & Rollup tests
 python3 -m unittest chain/l2/bridge/test_bridge.py
+
+# Run ACP Agent protocol tests
+python3 -m unittest chain/rpc/api/test_acp_adapter.py
 ```
 
 ### Adding New Tests
