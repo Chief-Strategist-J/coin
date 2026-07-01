@@ -1,0 +1,1590 @@
+flow_dsl_spec: complete_reference
+version: 1
+
+# ═══════════════════════════════════════════════════
+# ENGINE BEHAVIOR — every ambiguity resolved explicitly
+# ═══════════════════════════════════════════════════
+
+engine_config:
+  evaluation_order: priority_ascending
+  tie_breaking: declaration_order
+  match_strategy: first_match_wins
+  missing_field_behavior: treat_as_null
+  type_mismatch_behavior: throw_error
+  unmatched_behavior: require_default
+  circular_goto_detection: static_analysis_required
+  max_branch_depth: 50
+  max_flow_execution_time: duration
+  null_vs_undefined: distinct
+  empty_array_is_falsy: false
+  empty_string_is_falsy: false
+  forbidden_field_namespaces: [secrets]
+  valid_field_namespaces: [input, context, previous, env, request, loop, self]
+  strict_schema_validation: true
+  fail_on_unknown_fields: true
+  fail_on_unused_step_output: false
+  ci_validation_required: [
+    dangling_goto_targets,
+    unreachable_steps,
+    missing_default_branch,
+    circular_references,
+    undeclared_dependencies,
+    type_contract_mismatches,
+    resource_id_exists,
+    secrets_not_in_conditions,
+    max_depth_not_exceeded
+  ]
+
+# ═══════════════════════════════════════════════════
+# CONDITION GRAMMAR
+# ═══════════════════════════════════════════════════
+
+condition_grammar:
+  literal: "always"
+  composite:
+    all: [condition]
+    any: [condition]
+    none: [condition]
+    not: condition
+    xor: [condition]
+  leaf:
+    field: string
+    op: operator
+    value: any
+    values: [any]
+    case_sensitive: boolean
+    compare_to_field: string
+  expression:
+    expr: string
+    language: jsonlogic | cel | rego | jmespath
+    vars: object
+  dynamic:
+    type: rule_table | feature_flag | policy_service
+    source: string
+    key: string
+    default: boolean
+
+operators:
+  equality: [eq, neq]
+  ordering: [gt, gte, lt, lte, between]
+  membership: [in, not_in]
+  presence: [exists, not_exists, is_null, is_not_null]
+  string: [matches, not_matches, contains, not_contains, starts_with, ends_with, length_eq, length_gt, length_lt]
+  type: [type_is, instance_of]
+
+field_reference_namespaces:
+  input: request payload, trigger params — read-only
+  context: resolved once per flow run by guards — read-only after guards
+  previous: "<step_id>.output.<field> — only if declared in requires.steps"
+  env: environment/deployment config
+  request: raw transport data — headers, cookies, ip, host
+  loop: "current loop var — <loop_id>.item, <loop_id>.index"
+  self: current step's own partial state, for multi-phase steps
+  secrets: NEVER referenceable in when: conditions, action-input only
+
+# ═══════════════════════════════════════════════════
+# BRANCH SCHEMA
+# ═══════════════════════════════════════════════════
+
+branch_schema:
+  name: string
+  priority: int
+  when: condition
+  goto: string
+  metadata: object
+  branch_source:
+    type: dynamic_table | rule_engine | feature_flag
+    table: string
+    match_field: string
+    output_field: string
+    default: string
+  required_default: "every branches[] list MUST contain exactly one entry with when: always as final fallback"
+
+# ═══════════════════════════════════════════════════
+# STEP SCHEMA
+# ═══════════════════════════════════════════════════
+
+step_schema:
+  id: string
+  action: string
+  resource: string
+  protocol_call:
+    method: string
+    path: string
+    rpc_method: string
+    query: string
+  input:
+    field_name:
+      from: string
+      required: boolean
+      type: string | number | boolean | object | array
+      default: any
+  internal:
+    field_name:
+      from: string
+  external:
+    field_name:
+      type: string
+      nullable: boolean
+      default: any
+  redact_in_logs: [string]
+  requires:
+    steps: [string]
+    context: [string]
+    guards: [string]
+  optional_requires:
+    steps: [string]
+  timeout: duration
+  retry: retry_spec
+  idempotency_key: string
+  async: boolean
+  branches: [branch_schema]
+
+# ═══════════════════════════════════════════════════
+# CONTROL FLOW — CONDITIONALS
+# ═══════════════════════════════════════════════════
+
+if_block:
+  type: if
+  if: condition
+  then: [step]
+  else_if:
+    - when: condition
+      then: [step]
+  else: [step]
+
+switch_block:
+  type: switch
+  on: string
+  cases:
+    - match: any | [any]
+      then: [step]
+      fallthrough: boolean
+  default: [step]
+
+# ═══════════════════════════════════════════════════
+# LOOPS
+# ═══════════════════════════════════════════════════
+
+for_each_loop:
+  type: for_each
+  id: string
+  over: string
+  as: string
+  index_as: string
+  parallel: boolean
+  max_concurrency: int
+  body: [step]
+  break_when: condition
+  continue_when: condition
+  on_item_error: fail_fast | skip | collect
+  collect_results_as: string
+  max_iterations: int
+
+for_range_loop:
+  type: for_range
+  id: string
+  from: int
+  to: int
+  step: int
+  as: string
+  body: [step]
+  break_when: condition
+
+while_loop:
+  type: while
+  id: string
+  condition: condition
+  body: [step]
+  max_iterations: int
+  on_max_iterations_exceeded: string
+
+do_while_loop:
+  type: do_while
+  id: string
+  body: [step]
+  condition: condition
+  max_iterations: int
+
+retry_until_loop:
+  type: retry_until
+  id: string
+  body: [step]
+  until: condition
+  max_attempts: int
+  delay: duration
+  backoff: fixed | linear | exponential
+
+poll_loop:
+  type: poll
+  id: string
+  action: string
+  interval: duration
+  timeout: duration
+  until: condition
+  on_timeout: string
+
+recursive_call:
+  type: call_self
+  id: string
+  with: object
+  depth_limit: int
+  on_depth_exceeded: string
+
+loop_control:
+  break: { loop_id: string, when: condition }
+  continue: { loop_id: string, when: condition }
+
+# ═══════════════════════════════════════════════════
+# ERROR HANDLING
+# ═══════════════════════════════════════════════════
+
+try_block:
+  type: try
+  id: string
+  try: [step]
+  catch:
+    - error_type: [string]
+      as: string
+      when: condition
+      then: [step]
+  finally: [step]
+
+throw_statement:
+  type: throw
+  error_code: string
+  message: string
+  cause: string
+  context: object
+
+error_hierarchy:
+  base: base_error
+  types:
+    - name: string
+      extends: string
+      retryable: boolean
+      status: int
+      fields: object
+
+error_handler_map:
+  ERROR_CODE:
+    status: int
+    message: string
+    retryable: boolean
+    retry_policy: retry_spec
+    compensate: boolean
+    escalate_to: string
+    alert: string
+    log_level: debug | info | warn | error | critical
+
+retry_spec:
+  max_attempts: int
+  backoff: fixed | linear | exponential | exponential_jitter
+  base_delay_ms: int
+  max_delay_ms: int
+  jitter: boolean
+  retry_on: [string]
+  no_retry_on: [string]
+  retry_budget:
+    max_retries_per_window: int
+    window: duration
+
+circuit_breaker_spec:
+  failure_threshold: int
+  success_threshold: int
+  window: duration
+  cooldown: duration
+  half_open_max_calls: int
+  on_open: string
+
+fallback_spec:
+  type: static_value | cached_value | alternate_action | degrade
+  value: any
+  action: string
+  cache_key: string
+  max_staleness: duration
+
+bulkhead_spec:
+  max_concurrent_calls: int
+  max_queue_size: int
+  on_reject: string
+
+timeout_spec:
+  duration: duration
+  on_timeout: string
+  cancel_downstream: boolean
+
+dead_letter_spec:
+  enabled: boolean
+  target: string
+  max_delivery_attempts: int
+  on_exhausted: string
+
+compensation_spec:
+  type: saga
+  steps:
+    - step_id: string
+      compensate_action: string
+      order: forward | reverse
+  on_partial_failure: compensate_all | compensate_completed | manual_intervention
+
+global_error_boundary:
+  scope: flow | step_group
+  catch: [string]
+  then: [step]
+  reraise: boolean
+
+# ═══════════════════════════════════════════════════
+# OOP CONSTRUCTS
+# ═══════════════════════════════════════════════════
+
+interface_def:
+  type: interface
+  name: string
+  methods:
+    - name: string
+      input_schema: object
+      output_schema: object
+      errors: [string]
+
+abstract_flow_def:
+  type: abstract_flow
+  name: string
+  abstract_steps: [string]
+  concrete_steps: [step]
+
+flow_class_def:
+  type: flow_class
+  name: string
+  implements: [string]
+  extends: string
+  fields:
+    field_name:
+      type: string
+      default: any
+      visibility: public | private | protected
+  methods:
+    - name: string
+      override: boolean
+      input: object
+      output: object
+      body: [step]
+  constructor:
+    input: object
+    body: [step]
+
+inheritance_spec:
+  base: string
+  overrides:
+    - method: string
+      strategy: replace | extend_before | extend_after
+      body: [step]
+
+polymorphic_dispatch:
+  type: polymorphic_call
+  interface: string
+  resolve_implementation:
+    from: string
+    registry: string
+  method: string
+  input: object
+
+composition_spec:
+  type: composed_flow
+  name: string
+  components:
+    - id: string
+      flow_ref: string
+      bind_input: object
+      bind_output: object
+
+mixin_def:
+  type: mixin
+  name: string
+  provides: [string]
+  steps: [step]
+
+encapsulation_spec:
+  visibility_default: private
+  exposed_outputs: [string]
+  hidden_internal_fields: [string]
+
+singleton_resource:
+  type: singleton
+  id: string
+  init: [step]
+  lifecycle: process | request | session
+
+factory_spec:
+  type: factory
+  name: string
+  produces: string
+  create_method:
+    input: object
+    dispatch:
+      - when: condition
+        instantiate: string
+
+# ═══════════════════════════════════════════════════
+# CONCURRENCY
+# ═══════════════════════════════════════════════════
+
+parallel_block:
+  type: parallel
+  id: string
+  branches:
+    - id: string
+      action: string
+      input: object
+      required: boolean
+      timeout: duration
+      retry: retry_spec
+  join: all | any | n_of_m | race
+  join_count: int
+  on_success: string
+  on_partial_failure: string
+  on_all_failure: string
+  cancel_remaining_on_join: boolean
+
+fork_join:
+  type: fork_join
+  id: string
+  fork:
+    - id: string
+      body: [step]
+  join_strategy: wait_all | wait_first | wait_n
+  join_n: int
+  merge_outputs:
+    strategy: concat | reduce | overwrite | custom
+    reducer: string
+
+async_step:
+  type: async
+  id: string
+  action: string
+  input: object
+  await: boolean
+  callback_step: string
+  correlation_id: string
+
+fire_and_forget:
+  type: fire_and_forget
+  action: string
+  input: object
+  on_error: log_only | dead_letter
+
+mutex_spec:
+  id: string
+  key: string
+  ttl: duration
+  on_lock_timeout: string
+
+semaphore_spec:
+  id: string
+  max_permits: int
+  acquire_timeout: duration
+  on_acquire_timeout: string
+
+rate_limiter_spec:
+  id: string
+  algorithm: token_bucket | sliding_window | leaky_bucket
+  limit: string
+  scope: string
+  on_exceeded: string
+
+race_block:
+  type: race
+  id: string
+  competitors:
+    - id: string
+      action: string
+      input: object
+  on_first_success: string
+  cancel_losers: boolean
+  on_all_fail: string
+
+barrier_sync:
+  type: barrier
+  id: string
+  wait_for: [string]
+  timeout: duration
+  on_timeout: string
+
+producer_consumer:
+  type: producer_consumer
+  id: string
+  producer:
+    action: string
+    emit_to: string
+  consumers:
+    - id: string
+      subscribe_to: string
+      concurrency: int
+      action: string
+  backpressure:
+    strategy: block | drop | buffer
+    buffer_size: int
+
+distributed_lock:
+  type: distributed_lock
+  resource_key: string
+  provider: string
+  ttl: duration
+  retry:
+    max_attempts: int
+    delay: duration
+  on_acquire_failure: string
+
+idempotent_execution:
+  idempotency_key: string
+  scope: global | tenant | user
+  ttl: duration
+  on_duplicate: return_cached | reject | ignore
+
+transaction_spec:
+  type: distributed_transaction
+  protocol: two_phase_commit | saga | outbox
+  participants:
+    - resource: string
+      prepare_action: string
+      commit_action: string
+      rollback_action: string
+  isolation_level: string
+  on_prepare_failure: rollback_all
+
+event_driven_step:
+  type: event_listener
+  id: string
+  subscribe_to: string
+  filter: condition
+  concurrency: int
+  action: string
+  ack_mode: auto | manual
+  on_processing_error: retry | dead_letter | discard
+
+scheduled_step:
+  type: scheduled
+  id: string
+  cron: string
+  timezone: string
+  action: string
+  overlap_policy: skip | queue | cancel_previous
+
+state_consistency:
+  read_model: strong | eventual
+  write_model: sync | async
+  conflict_resolution: last_write_wins | version_vector | custom
+  resolver_action: string
+
+# ═══════════════════════════════════════════════════
+# RESOURCE REGISTRY
+# ═══════════════════════════════════════════════════
+
+resources:
+  http_apis:
+    - id: string
+      protocol: https
+      base_url: string
+      auth:
+        type: oauth2_client_credentials | api_key | basic | bearer_token | none
+        client_id: string
+        client_secret: string
+        header: string
+        value: string
+      headers: object
+      timeout: duration
+      retry: retry_spec
+      circuit_breaker: circuit_breaker_spec
+      rate_limit: rate_limiter_spec
+
+  grpc_services:
+    - id: string
+      protocol: grpc
+      address: string
+      tls:
+        enabled: boolean
+        ca_cert: string
+      auth:
+        type: mtls | jwt | none
+      timeout: duration
+      retry: retry_spec
+
+  databases:
+    - id: string
+      protocol: postgresql | mysql | mongodb | dynamodb | cassandra
+      connection_string: string
+      pool:
+        min: int
+        max: int
+      timeout: duration
+      read_replica: string
+      isolation_level: string
+
+  caches:
+    - id: string
+      protocol: redis | memcached
+      address: string
+      tls: boolean
+      timeout: duration
+      pool:
+        max: int
+      eviction_policy: string
+
+  message_queues:
+    - id: string
+      protocol: amqp | kafka | sqs | pubsub
+      address: string
+      topic_or_exchange: string
+      auth:
+        type: basic | iam | none
+        username: string
+        password: string
+      delivery_guarantee: at_least_once | at_most_once | exactly_once
+      dead_letter_topic: string
+
+  object_storage:
+    - id: string
+      protocol: s3 | gcs | azure_blob
+      bucket: string
+      region: string
+      auth:
+        type: iam_role | access_key
+        access_key: string
+        secret_key: string
+      timeout: duration
+
+  webhooks:
+    - id: string
+      protocol: https
+      inbound: boolean
+      signature_verification:
+        type: hmac_sha256 | jwt
+        secret: string
+      idempotency_header: string
+
+  external_services:
+    - id: string
+      protocol: string
+      base_url: string
+      auth: object
+      timeout: duration
+      retry: retry_spec
+      sla:
+        expected_latency_p99: duration
+        availability_target: string
+
+# ═══════════════════════════════════════════════════
+# FLOW ASSEMBLY
+# ═══════════════════════════════════════════════════
+
+defs:
+  guards: object
+  retry_policy: object
+  timeouts: object
+  audit_log: object
+  session_policy: object
+  errors: object
+
+entries:
+  entry_name:
+    trigger: string
+    params: object
+    guards: [object]
+    audit: object
+    steps: [step]
+    outcomes: object
+
+outcomes:
+  outcome_name:
+    status: int
+    emits: [string]
+
+errors: object
+
+architecture_spec: hexagonal_and_patterns
+version: 1
+
+# ═══════════════════════════════════════════════════
+# HEXAGONAL ARCHITECTURE (PORTS & ADAPTERS)
+# ═══════════════════════════════════════════════════
+
+hexagonal_architecture:
+  core_domain:
+    id: string
+    entities:
+      - name: string
+        fields: object
+        invariants: [condition]
+    value_objects:
+      - name: string
+        fields: object
+        immutable: true
+    domain_services:
+      - name: string
+        input: object
+        output: object
+        pure: boolean
+
+  ports:
+    inbound:
+      - id: string
+        name: string
+        description: string
+        methods:
+          - name: string
+            input_schema: object
+            output_schema: object
+            errors: [string]
+
+    outbound:
+      - id: string
+        name: string
+        description: string
+        methods:
+          - name: string
+            input_schema: object
+            output_schema: object
+            errors: [string]
+
+  adapters:
+    inbound:
+      - id: string
+        implements_port: string
+        type: http_controller | grpc_handler | cli | message_consumer | scheduled_trigger
+        resource: string
+        maps_to_domain: object
+
+    outbound:
+      - id: string
+        implements_port: string
+        type: db_repository | http_client | mq_publisher | cache_client | file_store
+        resource: string
+        maps_from_domain: object
+
+  application_layer:
+    use_cases:
+      - id: string
+        name: string
+        depends_on_ports: [string]
+        input: object
+        output: object
+        steps: [step]
+
+  dependency_rule: "core_domain MUST NOT import/reference adapters or infrastructure resources directly; only via ports"
+  validation:
+    - "no domain_service references resource.* directly"
+    - "no entity references http_apis/databases/message_queues"
+    - "adapters may depend on ports and domain; domain never depends on adapters"
+
+# ═══════════════════════════════════════════════════
+# DEPENDENCY INVERSION
+# ═══════════════════════════════════════════════════
+
+dependency_inversion:
+  abstraction_def:
+    id: string
+    type: interface | abstract_flow_class
+    methods: [string]
+
+  concrete_binding:
+    abstraction: string
+    implementation: string
+    binding_scope: singleton | transient | scoped | request
+
+  injection_points:
+    - consumer: string
+      requires_abstraction: string
+      resolved_via: constructor | factory | service_locator | context_lookup
+
+  binding_registry:
+    id: string
+    bindings:
+      - abstraction: string
+        implementation: string
+        condition: condition
+        priority: int
+
+  inversion_of_control_container:
+    id: string
+    scope_lifecycles: [singleton, request, transient, tenant_scoped]
+    lazy_init: boolean
+    circular_dependency_detection: required
+
+# ═══════════════════════════════════════════════════
+# LARGE-SCALE DEPENDENCY MANAGEMENT
+# ═══════════════════════════════════════════════════
+
+dependency_management:
+  module_graph:
+    modules:
+      - id: string
+        owns: [string]
+        exposes: [string]
+        depends_on: [string]
+        depends_on_forbidden: [string]
+
+  dependency_rules:
+    - rule: no_circular_module_deps
+      enforced_at: ci_time
+    - rule: layered_dependency_direction
+      layers: [domain, application, adapters, infrastructure]
+      allowed_direction: infrastructure_to_domain_only
+    - rule: max_fan_out
+      threshold: int
+      applies_to: module
+    - rule: max_fan_in
+      threshold: int
+      applies_to: shared_kernel_modules
+
+  versioning:
+    strategy: semver | calver
+    breaking_change_policy: major_bump_required
+    deprecation_window: duration
+    contract_compatibility_check: required_at_ci
+
+  shared_kernel:
+    id: string
+    contains: [string]
+    change_approval: cross_team_required
+
+  service_boundaries:
+    - service_id: string
+      owns_data: [string]
+      exposes_api: [string]
+      no_shared_db_with: [string]
+
+  dependency_health:
+    audit_frequency: string
+    unused_dependency_detection: enabled
+    vulnerability_scan: enabled
+    license_compliance_check: enabled
+
+# ═══════════════════════════════════════════════════
+# DATA-ORIENTED DESIGN PATTERNS
+# ═══════════════════════════════════════════════════
+
+pattern_adapter:
+  type: adapter
+  id: string
+  target_interface: string
+  adaptee: string
+  translation_map:
+    input_mapping: object
+    output_mapping: object
+  use_case: "normalize heterogeneous external data sources to internal domain schema"
+
+pattern_prototype:
+  type: prototype
+  id: string
+  base_template: object
+  clone_strategy: deep | shallow
+  overrides_allowed: [string]
+  use_case: "cheaply spawn variant configs (e.g. per-tenant pipeline configs cloned from base template)"
+
+pattern_repository:
+  type: repository
+  id: string
+  entity: string
+  backing_resource: string
+  methods: [find_by_id, find_by_criteria, save, delete, bulk_upsert]
+  caching:
+    enabled: boolean
+    ttl: duration
+    invalidation_strategy: write_through | write_behind | ttl_only
+
+pattern_unit_of_work:
+  type: unit_of_work
+  id: string
+  tracked_entities: [string]
+  commit_action: string
+  rollback_action: string
+  scope: request | transaction
+
+pattern_strategy:
+  type: strategy
+  id: string
+  interface: string
+  implementations:
+    - name: string
+      when: condition
+      handler: string
+  default_implementation: string
+
+pattern_builder:
+  type: builder
+  id: string
+  produces: string
+  steps: [string]
+  validation_on_build: [condition]
+
+pattern_decorator:
+  type: decorator
+  id: string
+  wraps: string
+  adds_behavior: [before, after, around]
+  behavior_steps: [step]
+
+pattern_observer:
+  type: observer
+  id: string
+  subject: string
+  observers:
+    - id: string
+      on_event: string
+      handler: string
+  delivery: sync | async
+
+pattern_cqrs:
+  type: cqrs
+  id: string
+  command_side:
+    write_model: string
+    resource: string
+    validation: [condition]
+  query_side:
+    read_model: string
+    resource: string
+    denormalized: boolean
+  sync_strategy: event_driven | dual_write | cdc
+
+pattern_event_sourcing:
+  type: event_sourcing
+  id: string
+  aggregate: string
+  event_store: string
+  events:
+    - name: string
+      schema: object
+  snapshot_policy:
+    frequency: int
+    storage: string
+  replay_capable: true
+
+# ═══════════════════════════════════════════════════
+# DATA PIPELINE ARCHITECTURE
+# ═══════════════════════════════════════════════════
+
+data_pipeline:
+  id: string
+  type: batch | streaming | micro_batch | hybrid
+
+  stages:
+    - id: string
+      type: extract | transform | validate | enrich | aggregate | load | sink
+      resource: string
+      input_schema: object
+      output_schema: object
+      parallelism: int
+      partition_strategy: key_hash | round_robin | range
+      failure_policy: fail_fast | skip_bad_records | quarantine
+
+  ingestion:
+    sources:
+      - id: string
+        resource: string
+        format: json | avro | parquet | csv | protobuf
+        schema_registry: string
+        schema_evolution_policy: backward_compatible | forward_compatible | full_compatible
+
+  transformation_dag:
+    nodes:
+      - id: string
+        depends_on: [string]
+        operation: map | filter | aggregate | join | window | dedupe
+        config: object
+
+  windowing:
+    type: tumbling | sliding | session
+    size: duration
+    slide_interval: duration
+    late_data_policy:
+      allowed_lateness: duration
+      on_late_arrival: drop | reprocess | side_output
+
+  exactly_once_semantics:
+    enabled: boolean
+    checkpoint_interval: duration
+    checkpoint_storage: string
+    idempotent_sink: boolean
+
+  backpressure_handling:
+    strategy: buffer | drop_oldest | drop_newest | block_upstream
+    buffer_size: int
+    alert_threshold: string
+
+  data_quality:
+    validation_rules:
+      - field: string
+        rule: not_null | unique | range | regex | referential_integrity
+        on_violation: reject | quarantine | log_only
+    quarantine_sink: string
+    quality_metrics_export: string
+
+  schema_management:
+    registry: string
+    compatibility_mode: backward | forward | full | none
+    evolution_steps:
+      - version: int
+        change: add_field | remove_field | rename_field | type_change
+        migration_action: string
+
+  lineage_tracking:
+    enabled: boolean
+    track_at: stage_level | field_level
+    export_to: string
+
+  orchestration:
+    scheduler: cron | event_triggered | continuous
+    dag_engine: string
+    retry_policy: retry_spec
+    sla:
+      max_latency: duration
+      alert_on_breach: string
+
+  scaling:
+    autoscaling: boolean
+    min_workers: int
+    max_workers: int
+    scale_metric: queue_depth | cpu | custom
+    scale_trigger_threshold: string
+
+  compaction_and_retention:
+    retention_period: duration
+    compaction_strategy: time_based | size_based | log_compaction
+
+# ═══════════════════════════════════════════════════
+# INTEGRATION: WIRING PATTERNS INTO FLOW STEPS
+# ═══════════════════════════════════════════════════
+
+step_with_architecture_binding:
+  id: string
+  use_case_ref: string          # from hexagonal_architecture.application_layer.use_cases
+  injects: [string]              # abstraction ids resolved via IoC container
+  pattern_refs:
+    repository: string
+    strategy: string
+    adapter: string
+  pipeline_ref: string           # if step triggers/reads from a data_pipeline
+  
+system_spec: data_pipeline_and_architecture
+version: 1
+
+# ═══════════════════════════════════════════════════
+# HEXAGONAL ARCHITECTURE — WORKED EXAMPLE
+# ═══════════════════════════════════════════════════
+
+bounded_contexts:
+
+  - id: user_identity_context
+    core_domain:
+      entities:
+        - name: User
+          fields:
+            id: uuid
+            email: string
+            tenant_id: uuid
+            status: enum[active, suspended, deleted]
+          invariants:
+            - { field: email, rule: unique_within_tenant }
+            - { field: status, rule: cannot_transition_from_deleted }
+        - name: LinkedAccount
+          fields:
+            user_id: uuid
+            provider: enum[google, facebook, twitter, github]
+            provider_uid: string
+          invariants:
+            - { field: provider_uid, rule: unique_per_provider }
+      value_objects:
+        - name: Email
+          fields: { address: string }
+          immutable: true
+          validation: [{ rule: regex, pattern: email_format }]
+      domain_services:
+        - name: AccountLinkingPolicy
+          input: { existing_user: User, new_provider: string, email_verified: boolean }
+          output: { decision: enum[auto_link, conflict, needs_confirmation] }
+          pure: true
+
+    ports:
+      inbound:
+        - id: user_registration_port
+          methods:
+            - name: registerUser
+              input_schema: { email: string, tenant_id: uuid, provider: string }
+              output_schema: { user_id: uuid }
+              errors: [DuplicateEmailError, TenantNotFoundError]
+        - id: account_query_port
+          methods:
+            - name: findUserByProviderIdentity
+              input_schema: { provider: string, provider_uid: string }
+              output_schema: { user: object, nullable: true }
+              errors: []
+
+      outbound:
+        - id: user_repository_port
+          methods:
+            - name: save
+              input_schema: { user: object }
+              output_schema: { user_id: uuid }
+              errors: [PersistenceError]
+            - name: findById
+              input_schema: { user_id: uuid }
+              output_schema: { user: object, nullable: true }
+              errors: []
+        - id: event_publisher_port
+          methods:
+            - name: publish
+              input_schema: { event_type: string, payload: object }
+              output_schema: {}
+              errors: [PublishError]
+
+    adapters:
+      inbound:
+        - id: http_registration_controller
+          implements_port: user_registration_port
+          type: http_controller
+          resource: public_api_http
+          maps_to_domain:
+            body.email: input.email
+            body.tenant: input.tenant_id
+        - id: oauth_callback_controller
+          implements_port: account_query_port
+          type: http_controller
+          resource: public_api_http
+
+      outbound:
+        - id: postgres_user_repository
+          implements_port: user_repository_port
+          type: db_repository
+          resource: primary_db
+          maps_from_domain:
+            User.id: users.id
+            User.email: users.email
+            User.tenant_id: users.tenant_id
+        - id: kafka_event_publisher
+          implements_port: event_publisher_port
+          type: mq_publisher
+          resource: event_bus
+
+    application_layer:
+      use_cases:
+        - id: register_user_use_case
+          name: RegisterUser
+          depends_on_ports: [user_repository_port, event_publisher_port]
+          input: { email: string, tenant_id: uuid, provider: string }
+          output: { user_id: uuid }
+          steps:
+            - id: validate_uniqueness
+              action: user_repository_port.findByEmail
+              branches:
+                - name: unique
+                  priority: 1
+                  when: { field: result.user, op: not_exists }
+                  goto: persist_user
+                - name: taken
+                  priority: 2
+                  when: always
+                  goto: throw_duplicate_error
+            - id: persist_user
+              action: user_repository_port.save
+              branches:
+                - name: always
+                  priority: 1
+                  when: always
+                  goto: publish_registered_event
+            - id: publish_registered_event
+              action: event_publisher_port.publish
+              async: true
+              branches:
+                - name: always
+                  priority: 1
+                  when: always
+                  goto: success
+
+    dependency_rule: core_domain_never_imports_adapters
+    validation_rules:
+      - no_entity_references_resource_directly
+      - no_domain_service_references_http_or_db
+      - adapters_depend_on_ports_and_domain_only
+      - use_cases_depend_on_ports_never_on_adapters_directly
+
+  - id: risk_scoring_context
+    core_domain:
+      entities:
+        - name: RiskAssessment
+          fields:
+            user_id: uuid
+            score: number
+            factors: array
+      domain_services:
+        - name: RiskScoringPolicy
+          input: { ip_country: string, home_country: string, device_known: boolean, velocity: object }
+          output: { score: number, factors: array }
+          pure: true
+    ports:
+      inbound:
+        - id: risk_evaluation_port
+          methods:
+            - name: evaluateRisk
+              input_schema: object
+              output_schema: { score: number }
+              errors: []
+      outbound:
+        - id: risk_data_store_port
+          methods:
+            - name: getVelocityData
+              input_schema: { user_id: uuid }
+              output_schema: object
+              errors: []
+    adapters:
+      outbound:
+        - id: redis_velocity_store
+          implements_port: risk_data_store_port
+          type: cache_client
+          resource: session_cache
+
+dependency_inversion:
+  ioc_container:
+    id: root_container
+    scope_lifecycles: [singleton, request, tenant_scoped]
+    lazy_init: true
+    circular_dependency_detection: required
+
+  binding_registry:
+    id: production_bindings
+    bindings:
+      - abstraction: user_repository_port
+        implementation: postgres_user_repository
+        binding_scope: singleton
+      - abstraction: event_publisher_port
+        implementation: kafka_event_publisher
+        binding_scope: singleton
+      - abstraction: risk_data_store_port
+        implementation: redis_velocity_store
+        binding_scope: singleton
+
+  test_bindings:
+    id: test_double_bindings
+    bindings:
+      - abstraction: user_repository_port
+        implementation: in_memory_user_repository
+        binding_scope: singleton
+      - abstraction: event_publisher_port
+        implementation: in_memory_event_publisher
+        binding_scope: singleton
+
+module_graph:
+  modules:
+    - id: user_identity_context
+      owns: [User, LinkedAccount, Email]
+      exposes: [user_registration_port, account_query_port]
+      depends_on: [shared_kernel]
+      depends_on_forbidden: [risk_scoring_context.core_domain]
+    - id: risk_scoring_context
+      owns: [RiskAssessment]
+      exposes: [risk_evaluation_port]
+      depends_on: [shared_kernel]
+      depends_on_forbidden: [user_identity_context.core_domain]
+    - id: shared_kernel
+      owns: [TenantId, CorrelationId, DomainEvent]
+      exposes: [TenantId, CorrelationId, DomainEvent]
+      depends_on: []
+
+  dependency_rules:
+    - rule: no_circular_module_deps
+      enforced_at: ci_time
+    - rule: layered_dependency_direction
+      layers: [domain, application, adapters, infrastructure]
+      allowed_direction: infrastructure_to_domain_only
+    - rule: no_cross_context_domain_imports
+      enforced_at: ci_time
+      exception: shared_kernel
+
+  service_boundaries:
+    - service_id: user_identity_context
+      owns_data: [users, linked_accounts]
+      exposes_api: [user_registration_port, account_query_port]
+      no_shared_db_with: [risk_scoring_context]
+
+# ═══════════════════════════════════════════════════
+# DATA PIPELINE — SIGN-UP / RISK / PROVISIONING EVENTS
+# ═══════════════════════════════════════════════════
+
+data_pipelines:
+
+  - id: user_event_stream_pipeline
+    type: streaming
+
+    ingestion:
+      sources:
+        - id: user_domain_events
+          resource: event_bus
+          format: avro
+          schema_registry: internal_schema_registry
+          schema_evolution_policy: backward_compatible
+
+    schema_management:
+      registry: internal_schema_registry
+      compatibility_mode: backward
+      evolution_steps:
+        - version: 1
+          change: add_field
+          migration_action: default_null_on_read
+        - version: 2
+          change: rename_field
+          migration_action: dual_write_old_and_new_field_for_2_versions
+
+    transformation_dag:
+      nodes:
+        - id: deserialize_event
+          depends_on: []
+          operation: map
+          config: { decoder: avro, schema_ref: user_event_v2 }
+
+        - id: filter_relevant_events
+          depends_on: [deserialize_event]
+          operation: filter
+          config:
+            condition:
+              any:
+                - { field: event.type, op: eq, value: user_registered }
+                - { field: event.type, op: eq, value: account_linked }
+                - { field: event.type, op: eq, value: provisioning_failed }
+
+        - id: enrich_with_tenant_metadata
+          depends_on: [filter_relevant_events]
+          operation: map
+          config:
+            lookup_resource: primary_db
+            join_key: tenant_id
+
+        - id: window_signups_by_tenant
+          depends_on: [enrich_with_tenant_metadata]
+          operation: window
+          config:
+            window_ref: tumbling_5min
+
+        - id: aggregate_signup_counts
+          depends_on: [window_signups_by_tenant]
+          operation: aggregate
+          config:
+            group_by: [tenant_id, event.type]
+            metric: count
+
+        - id: dedupe_by_event_id
+          depends_on: [aggregate_signup_counts]
+          operation: dedupe
+          config:
+            key_field: event.id
+            dedupe_window: 10m
+
+    windowing:
+      type: tumbling
+      size: 5m
+      slide_interval: 5m
+      late_data_policy:
+        allowed_lateness: 2m
+        on_late_arrival: side_output
+
+    exactly_once_semantics:
+      enabled: true
+      checkpoint_interval: 30s
+      checkpoint_storage: object_storage
+      idempotent_sink: true
+
+    backpressure_handling:
+      strategy: buffer
+      buffer_size: 10000
+      alert_threshold: "buffer_usage > 80%"
+
+    data_quality:
+      validation_rules:
+        - field: event.tenant_id
+          rule: not_null
+          on_violation: quarantine
+        - field: event.id
+          rule: unique
+          on_violation: reject
+        - field: event.type
+          rule: regex
+          on_violation: log_only
+      quarantine_sink: quarantine_bucket
+      quality_metrics_export: metrics_endpoint
+
+    lineage_tracking:
+      enabled: true
+      track_at: field_level
+      export_to: lineage_service
+
+    orchestration:
+      scheduler: continuous
+      dag_engine: flink
+      retry_policy:
+        max_attempts: 5
+        backoff: exponential
+        base_delay_ms: 500
+        max_delay_ms: 30000
+        retry_on: [TransientSinkError, ConnectionReset]
+        no_retry_on: [SchemaValidationError]
+      sla:
+        max_latency: 10s
+        alert_on_breach: pagerduty_pipeline_alerts
+
+    scaling:
+      autoscaling: true
+      min_workers: 2
+      max_workers: 20
+      scale_metric: queue_depth
+      scale_trigger_threshold: "queue_depth > 5000"
+
+    compaction_and_retention:
+      retention_period: 90d
+      compaction_strategy: log_compaction
+
+    sinks:
+      - id: signup_metrics_sink
+        type: db_repository
+        resource: primary_db
+        write_mode: upsert
+      - id: audit_event_archive
+        type: file_store
+        resource: object_storage
+        format: parquet
+        partition_by: [tenant_id, event_date]
+      - id: dead_letter_sink
+        type: mq_publisher
+        resource: event_bus
+        topic_or_exchange: user_events_dlq
+
+  - id: risk_scoring_batch_pipeline
+    type: batch
+
+    ingestion:
+      sources:
+        - id: raw_login_attempts
+          resource: primary_db
+          format: json
+          schema_registry: internal_schema_registry
+          schema_evolution_policy: forward_compatible
+
+    stages:
+      - id: extract_login_attempts
+        type: extract
+        resource: primary_db
+        input_schema: { table: login_attempts, since: last_checkpoint }
+        output_schema: object
+        parallelism: 4
+        partition_strategy: range
+        failure_policy: fail_fast
+
+      - id: validate_records
+        type: validate
+        resource: null
+        input_schema: object
+        output_schema: object
+        parallelism: 4
+        partition_strategy: key_hash
+        failure_policy: quarantine_bad_records
+
+      - id: compute_risk_features
+        type: transform
+        resource: null
+        input_schema: object
+        output_schema: object
+        parallelism: 8
+        partition_strategy: key_hash
+        failure_policy: skip_bad_records
+
+      - id: aggregate_by_user
+        type: aggregate
+        resource: null
+        input_schema: object
+        output_schema: object
+        parallelism: 4
+        partition_strategy: key_hash
+        failure_policy: fail_fast
+
+      - id: load_risk_scores
+        type: load
+        resource: primary_db
+        input_schema: object
+        output_schema: object
+        parallelism: 2
+        partition_strategy: round_robin
+        failure_policy: fail_fast
+
+    orchestration:
+      scheduler: cron
+      dag_engine: airflow
+      retry_policy:
+        max_attempts: 3
+        backoff: exponential
+        base_delay_ms: 1000
+        max_delay_ms: 60000
+        retry_on: [ConnectionTimeout]
+        no_retry_on: [SchemaMismatchError]
+      sla:
+        max_latency: 1h
+        alert_on_breach: pagerduty_batch_alerts
+
+    scaling:
+      autoscaling: true
+      min_workers: 1
+      max_workers: 10
+      scale_metric: cpu
+      scale_trigger_threshold: "cpu > 75%"
+
+    data_quality:
+      validation_rules:
+        - field: user_id
+          rule: referential_integrity
+          on_violation: reject
+        - field: score
+          rule: range
+          on_violation: quarantine
+      quarantine_sink: risk_quarantine_table
+      quality_metrics_export: metrics_endpoint
+
+defs:
+  windows:
+    tumbling_5min: &tumbling_5min
+      type: tumbling
+      size: 5m
+
+resources:
+  http_apis:
+    - id: public_api_http
+      protocol: https
+      base_url: "{env.PUBLIC_API_BASE_URL}"
+      auth: { type: none }
+      timeout: 5s
+
+  databases:
+    - id: primary_db
+      protocol: postgresql
+      connection_string: "{secrets.primary_db_dsn}"
+      pool: { min: 2, max: 20 }
+      timeout: 3s
+
+  caches:
+    - id: session_cache
+      protocol: redis
+      address: "{env.REDIS_ADDR}"
+      tls: true
+      timeout: 500ms
+
+  message_queues:
+    - id: event_bus
+      protocol: kafka
+      address: "{env.KAFKA_BROKERS}"
+      topic_or_exchange: domain_events
+      delivery_guarantee: at_least_once
+      dead_letter_topic: domain_events_dlq
+
+  object_storage:
+    - id: object_storage
+      protocol: s3
+      bucket: "{env.ARCHIVE_BUCKET}"
+      region: "{env.AWS_REGION}"
+      auth: { type: iam_role }
+      timeout: 15s
